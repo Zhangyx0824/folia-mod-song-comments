@@ -69,6 +69,7 @@ test/smoke.mjs     jsdom 冒烟测试：按钮、页签、请求参数、热门�
 test/probe_scroll.mjs    真 Chrome 里的滚动探针：模拟宿主页签容器，断言列表可滚
 test/build_harness.mjs   浏览器台架（明暗两版）用于肉眼验收
 test/build_preview.mjs   用真实模组代码渲染商店预览图
+test/build_submit_url.mjs 生成 folium-compound「模组提交」表单的预填链接
 sync.sh            同步到本机 Folia 并重写授权摘要（--restart 顺便重启）
 ```
 
