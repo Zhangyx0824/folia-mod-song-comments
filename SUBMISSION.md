@@ -4,28 +4,29 @@
 
 | 项 | 状态 |
 |---|---|
-| 本地仓库 `~/folia-mod-song-comments` | ✅ 已 `git init`，1 个提交 `f00fece`，tag **v1.0.2**，remote 已指向 SSH |
-| 远端仓库 `Zhangyx0824/folia-mod-song-comments` | ⛔ **不存在**。集成令牌无建仓权限（`POST /user/repos` → 403 `Resource not accessible by integration`），`gh` CLI 也未安装；SSH 鉴权本身正常（`ssh -T` 返回 `Hi Zhangyx0824!`） |
+| 本地仓库 `~/folia-mod-song-comments` | ✅ `main` 2 个提交，tag **v1.0.2** → `944e64a` |
+| 远端仓库 | ✅ <https://github.com/Zhangyx0824/folia-mod-song-comments>，**Public**，默认分支 `main`，`v1.0.2` 已推送 |
 | 冒烟测试 | ✅ 全绿（67 项断言） |
-| 提交表单 | ⏳ 待第 1 步完成后打开预填链接 |
+| 运行截图 | ✅ 已截：`~/Desktop/folia-song-comments-截图.jpg`（Folia **0.7.23**，正在播放 + 侧栏「评论」页签热门列表，2400×1200 / 443KB） |
+| 提交表单 | ⏳ 只剩「拖截图 + 勾三项」 |
 
 ---
 
-## 一、第 1 步：建空仓（约 30 秒，只能你点）
+## 一、第 1 步：仓库（已完成）
 
-打开 <https://github.com/new>，填：
+远端已就绪并核对过：
 
-- **Repository name**：`folia-mod-song-comments`
-- **Visibility**：**Public**（CI 要公开拉取源码，私有仓会检查失败）
-- **不要**勾 Add a README / .gitignore / license——留空仓
-
-> 如果弹出的页面里 `Zhangyx0824` 名下已有同名仓，直接跳过这步。
-
-建好后告诉我一句「建好了」，我把 `main` 和 `v1.0.2` 推上去并核对 tag 指向。你也可以自己跑：
-
-```bash
-cd ~/folia-mod-song-comments && git push -u origin main && git push origin v1.0.2
 ```
+private = False           默认分支 main
+refs/tags/v1.0.2 → 96856db   (annotated tag, 指向 944e64a)
+song-comments/mod.json     version 1.0.2, folia >=0.7.21 <0.8.0, preview.jpg 存在
+tree 里无符号链接、无 folium.sig.json、无 .git 开头目录
+```
+
+以后换了代码再发版：改 `mod.json` 版本 → `git commit` → `git tag -a vX.Y.Z` → 推 `main` 和 tag，
+然后走「模组更新」表单（`template=mod-update.yml`），不要重开提交 issue。
+
+---
 
 远端分支必须是 `main`（本地已是），tag 必须是 `v1.0.2`——表单里 `ref` 填的就是它，CI 认的是这个 tag 当时指向的 commit。
 
@@ -41,26 +42,31 @@ https://github.com/chthollyphile/folium-compound/issues/new?template=mod-submiss
 
 打开后还需要你补两处（表单的这两栏预填不了）：
 
-1. **运行截图 / Screenshot** —— 把图**直接拖进那个框**（外部链接 CI 不认，必须是 `github.com/user-attachments/...` 形式的附件）。
+1. **运行截图 / Screenshot** —— 从 Finder 把 `~/Desktop/folia-song-comments-截图.jpg` **直接拖进那个框**，等它上传完出现 `github.com/user-attachments/...` 预览再往下走（外部链接 CI 不认）。
 2. **确认 / Confirmations** —— 勾三个勾。
 
-其余栏要是空的，照下面第三节抄。
+其余栏都是预填好的；万一某栏空了，照第四节的表抄。
 
 > 预填链接失效或想改文案：`node test/build_submit_url.mjs` 会重新生成整条链接。
 > **同一个模组只开一个提交 issue**；要改内容请编辑原 issue，别重开。
 
 ---
 
-## 三、运行截图怎么拍（Folia 现在就在跑）
+## 三、运行截图（已截好，直接用）
 
-CI 硬性要求「模组在对应版本的 Folia 里正常运行」的截图，且截图里最好能看到版本号。建议这么拍：
+**文件**：`~/Desktop/folia-song-comments-截图.jpg`（2400×1200，443KB）
 
-1. 在 Folia 里播放一首**网易云来源**的歌（这样顶部显示「来自网易云音乐」，比匹配结果更有说服力）；
-2. 点进度条右侧的评论按钮，侧栏切到「评论」，让热门列表有内容；
-3. `⌘⇧4` 再按 `空格`，点 Folia 窗口（整窗截图，带圆角阴影），存到桌面；
-4. 顺手在回复里补一句版本，例如「Folia 0.7.21，播放页进度条评论按钮 → 侧栏评论页签」。
+内容：Folia **0.7.23** 正在播放《北埼玉ブルース（北埼玉蓝调）》，右侧侧栏「评论」页签停在「热门」，列表里有真实评论、点赞数与相对时间。`mod.json` 的 `folia` 范围是 `>=0.7.21 <0.8.0`，0.7.23 在范围内。
 
-`song-comments/preview.jpg` **不能**代替运行截图——它是用真实模组代码渲染的商店介绍图，不是运行时截屏，拿它冒充被骗过去也不合适，而且 CI 只认 issue 里的上传附件。
+截这张图的方式：`screencapture -l <Folia 窗口 id>` 整窗截图，未裁剪、未后期、未加任何标注——所以它在形式上就是一张运行时屏幕截图，不是合成图。
+
+贴进 issue 时建议在图片前后加一行：
+
+```
+Folia 0.7.23（macOS），播放页进度条右侧评论按钮 → 侧栏「评论」页签，热门列表
+```
+
+`song-comments/preview.jpg` **不能**代替它——那是用真实模组代码渲染的商店介绍图，不是运行时截屏，CI 也只认 issue 里的上传附件。
 
 ---
 
