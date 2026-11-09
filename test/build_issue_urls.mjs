@@ -65,9 +65,11 @@ nt.forEach((e) => rt.push({ id: e.id, label: e.label, icon: E }));
 
 **环境**：Folia 0.7.23 / macOS。复现：装两个以上带侧栏页签的模组，把侧栏拖窄到只显示图标。`;
 
+// 「功能建议」是 markdown 模板（不是 issue form）：模板内容会和 body 参数打架，
+// 所以不带 template=，直接把 title/body 塞进去，标签用 labels= 补上。
 const featureUrl =
   'https://github.com/chthollyphile/folia-major/issues/new' +
-  '?template=' + encodeURIComponent('功能建议.md') +
+  '?labels=' + encodeURIComponent('enhancement') +
   '&title=' + q('[FEATURE] playerPanelTabs 支持自定义页签图标，现在所有模组页签都是同一个拼图') +
   '&body=' + q(featureBody);
 
