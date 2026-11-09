@@ -1,4 +1,4 @@
-// song-comments/client.mjs — 歌曲评论 v1.0.0
+// song-comments/client.mjs — 歌曲评论 v1.0.3
 //
 // 播放页进度条右侧的评论按钮 → 播放器侧栏「评论」页签，显示当前歌曲在网易云音乐的评论。
 //
@@ -17,6 +17,11 @@ const ICON =
 const REFRESH_ICON =
   '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
   '<path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>';
+
+// 页签图标用的遮罩：黑色描边只取 alpha，配合 background-color: currentColor
+// 就能跟着按钮的常态 / 选中 / hover 颜色走，不用写死颜色。
+const TAB_ICON_MASK =
+  'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%23000\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\'%3E%3Cpath d=\'M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z\'/%3E%3C/svg%3E")';
 
 const HEART_ICON =
   '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
@@ -471,6 +476,61 @@ export default function activate(folium) {
   } catch (error) {
     warn(`progress button register failed: ${String(error?.message || error)}`);
   }
+
+  /* --------------------------------------------------------------- 页签图标 */
+
+  // 宿主 0.7.x 的 playerPanelTabs 只收 id / label / order / mount，注册项里的 icon 会被
+  // 丢掉，所有模组页签统一画成同一个拼图；而且只有侧栏窄到放不下文字时才画图标。
+  // 官方没给改图标的入口，这里用 styles 注册表（宿主会把它包进 @layer folium-mods 插到
+  // head）只覆盖自己那一个按钮：宿主画了图标就换成评论气泡，标签模式完全不动。
+  // 用 * 匹配 data-ponder-panel-tab-button 的值，宿主改 id 拼接格式也不会误伤别的页签。
+  const TAB_SEL = '[data-ponder-panel-tab-button*="song-comments"]';
+  const TAB_ICON_CSS = `
+${TAB_SEL} svg{display:none !important;}
+${TAB_SEL} > span:has(svg)::before,
+${TAB_SEL}:has(> svg)::before{
+  content:"";
+  flex:0 0 auto;
+  width:16px;
+  height:16px;
+  background-color:currentColor;
+  -webkit-mask-image:${TAB_ICON_MASK};
+  mask-image:${TAB_ICON_MASK};
+  -webkit-mask-repeat:no-repeat;
+  mask-repeat:no-repeat;
+  -webkit-mask-position:center;
+  mask-position:center;
+  -webkit-mask-size:16px 16px;
+  mask-size:16px 16px;
+}
+`;
+
+  const registerTabIcon = () => {
+    // 模组被重新激活时别重复注入（styles 注册表对同 id 重复注册的处理各版本不一致）。
+    try {
+      if (typeof document !== 'undefined' && document.documentElement.hasAttribute('data-song-comments-tab-icon')) return;
+    } catch (_) {}
+    try {
+      const styles = folium.registries?.styles;
+      if (styles && typeof styles.register === 'function') {
+        styles.register({ id: 'tab-icon', css: TAB_ICON_CSS });
+        document.documentElement.setAttribute('data-song-comments-tab-icon', 'registry');
+        return;
+      }
+    } catch (error) {
+      warn(`tab icon style register failed: ${String(error?.message || error)}`);
+    }
+    // 老宿主没有 styles 注册表：自己插一张表。效果一样，只是不进 @layer folium-mods。
+    try {
+      if (typeof document === 'undefined' || !document.head) return;
+      const el = document.createElement('style');
+      el.setAttribute('data-song-comments-tab-icon', '');
+      el.textContent = TAB_ICON_CSS;
+      document.head.appendChild(el);
+      document.documentElement.setAttribute('data-song-comments-tab-icon', 'inline');
+    } catch (_) {}
+  };
+  registerTabIcon();
 
   /* ------------------------------------------------------------------ 面板 */
 

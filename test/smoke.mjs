@@ -59,7 +59,7 @@ const makeHost = ({ getSong, settings = {}, reply } = {}) => {
     const calls = [];
     const opened = [];
     const listeners = new Map();
-    const registrations = { settingsSections: [], progressButtons: [], playerPanelTabs: [] };
+    const registrations = { settingsSections: [], progressButtons: [], playerPanelTabs: [], styles: [] };
     const host = {
         env: { context: 'main' },
         log: { info() {}, warn() {} },
@@ -80,6 +80,12 @@ const makeHost = ({ getSong, settings = {}, reply } = {}) => {
             playerPanelTabs: {
                 register: (definition) => {
                     registrations.playerPanelTabs.push(definition);
+                    return { unregister() {} };
+                },
+            },
+            styles: {
+                register: (definition) => {
+                    registrations.styles.push(definition);
                     return { unregister() {} };
                 },
             },
@@ -180,6 +186,46 @@ console.log('\nsettings schema');
         ok(field.description === undefined || typeof field.description === 'object', `${field.key} description is an i18n object`);
     });
     ctx.disposer?.();
+}
+
+console.log('\ntab icon');
+{
+    // 宿主 0.7.x 不认 playerPanelTabs 的 icon 字段，三个模组页签长得一模一样。
+    // 模组用 styles 注册表只覆盖自己那个按钮：宿主画了图标（窄侧栏、未选中）就换成评论气泡。
+    document.documentElement.removeAttribute('data-song-comments-tab-icon');
+    const ctx = await activateWith({ getSong: () => neteaseSong });
+    const entries = ctx.registrations.styles;
+    eq(entries.length, 1, 'one style sheet registered for the tab icon');
+    eq(entries[0].id, 'tab-icon', 'style entry id stays stable');
+    const css = entries[0].css;
+    ok(css.includes('[data-ponder-panel-tab-button*="song-comments"]'), 'scoped to this mod tab only by its data attribute');
+    ok(/\.sc-root|\.sc-body/.test(css) === false, 'global sheet carries no panel internals');
+    ok(/display:none/.test(css), 'host puzzle icon is hidden');
+    ok(/mask-image/.test(css), 'replacement is drawn with a mask');
+    ok(/currentColor/.test(css), 'icon inherits the button colour (normal / selected / hover)');
+    ok(/data:image\/svg\+xml/.test(css), 'mask is inline svg — no network asset, no extra file');
+    ok(/:has\(svg\)/.test(css), 'replacement only appears where the host actually drew an icon');
+    ok(/\sp{0,}>\s*span:has\(svg\)::before/.test(css.replace(/\n/g, ' ')) || /span:has\(svg\)::before/.test(css), 'matches the host button > span > svg layout');
+    ok(/16px/.test(css), 'icon keeps the host icon size (16px)');
+
+    // 重复激活（模组热重载）不应该再注入第二份。
+    const again = await activateWith({ getSong: () => neteaseSong });
+    eq(again.registrations.styles.length, 0, 're-activation does not register a second sheet');
+    ctx.disposer?.();
+}
+
+console.log('\ntab icon (host without a styles registry)');
+{
+    document.documentElement.removeAttribute('data-song-comments-tab-icon');
+    const built = makeHost({ getSong: () => neteaseSong, reply: replyFor });
+    delete built.host.registries.styles;
+    const module = await import(pathToFileURL(CLIENT).href);
+    module.default(built.host);
+    await flush(0);
+    const injected = document.head.querySelector('style[data-song-comments-tab-icon]');
+    ok(injected !== null, 'falls back to an inline <style> in head');
+    ok(injected !== null && injected.textContent.includes('data-ponder-panel-tab-button*="song-comments"'), 'fallback sheet has the same scoped rules');
+    delete document.documentElement.dataset.songCommentsTabIcon;
 }
 
 console.log('\nbutton');
