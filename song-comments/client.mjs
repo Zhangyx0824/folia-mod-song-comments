@@ -659,6 +659,7 @@ ${TAB_SEL}:has(> svg)::before{
 
         const MAX_HEIGHT_MARGIN = 12;
         let appliedMaxHeight = '';
+        let roomLogged = false;
 
         // 宿主把「页签内容的可用高度」放在 --pn-tab-room 上（它自己的队列页签也用这个值
         // 算列表高度）。自定义属性会继承进 shadow root，所以直接读到的是宿主算好的数，
@@ -680,6 +681,11 @@ ${TAB_SEL}:has(> svg)::before{
           // 退而用「视口底 − 我的顶」是不行的——面板底边锚定、高度由内容撑出来，
           // 内容一矮顶就下移，兜底值跟着变小，又会把高度锁死在矮内容那一档。
           const next = room ? `calc(${room} - ${MAX_HEIGHT_MARGIN}px)` : '';
+          if (!roomLogged) {
+            roomLogged = true;
+            // 宿主换了变量名的话，这行会变成 room=-，高度就退回「让宿主自己滚」。
+            log(`height cap room=${room || '-'} maxHeight=${next || 'none'}`);
+          }
           if (next === appliedMaxHeight) return;
           appliedMaxHeight = next;
           root.style.maxHeight = next;
