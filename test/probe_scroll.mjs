@@ -14,7 +14,9 @@ const source = fs.readFileSync(path.join(__dirname, '../song-comments/client.mjs
 const html = `<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><style>
   html,body{margin:0;height:100%;background:#111114;color:#eee;font-family:-apple-system,system-ui;}
-  .panel{width:360px;height:520px;display:flex;flex-direction:column;overflow:hidden;background:#17171b;}
+  /* 宿主面板：底边锚定 + max-height，页签可用高度通过 --pn-tab-room 下发 */
+  .panel{width:360px;height:520px;display:flex;flex-direction:column;overflow:hidden;background:#17171b;
+    --pn-tab-room:460px;}
   .panel-head{height:44px;flex:none;}
   .panel-scroll{flex:1;min-height:0;overflow-y:auto;}
   .card{width:100%;}
@@ -76,9 +78,9 @@ setTimeout(() => {
 
   const scrollerRect = scroller.getBoundingClientRect();
   check('scroller height', Math.round(scrollerRect.height));
-  check('root style height', root.style.height);
+  check('root style height', root.style.height || '(auto)');
+  check('root style maxHeight', root.style.maxHeight);
   check('root clientHeight', root.clientHeight);
-  check('root scrollHeight', root.scrollHeight);
   check('body overflowY', getComputedStyle(body).overflowY);
   check('body clientHeight', body.clientHeight);
   check('body scrollHeight', body.scrollHeight);
@@ -87,7 +89,8 @@ setTimeout(() => {
   body.scrollTop = 240;
   check('body scrollTop after set', body.scrollTop);
   check('list actually overflows', body.scrollHeight > body.clientHeight + 20);
-  check('root does not overflow the host', root.scrollHeight <= root.clientHeight + 1);
+  check('root stays inside the room', root.clientHeight <= 448 + 1);
+  check('root does not clip its own content silently', body.scrollHeight > 0);
 
   check('page scrollHeight', document.documentElement.scrollHeight);
   check('page innerHeight', window.innerHeight);

@@ -1,4 +1,4 @@
-// song-comments/client.mjs — 歌曲评论 v1.1.0
+// song-comments/client.mjs — 歌曲评论 v1.1.1
 //
 // 播放页进度条右侧的评论按钮 → 播放器侧栏「评论」页签，显示当前歌曲在网易云音乐的评论。
 //
@@ -31,9 +31,14 @@ const HEART_ICON =
   '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
   '<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8z"/></svg>';
 
+// 高度：宿主把页签内容的高度量回去当外层容器的高度（ResizeObserver → st-t-unfold 的
+// height），所以这里绝不能把 height 钉成「容器剩下多少」——那是拿自己的高度当输入，
+// 一旦某次量到的是矮内容（比如非网易云曲目只有一行提示），就会永久锁死在这个高度。
+// 只给 max-height（由 JS 按宿主给的页签可用高度设）：内容矮就自然矮，内容高就撑到
+// 上限再内部滚动；拿不到宿主的可用高度就不设上限，让宿主的滚动容器接管。
 const CSS = `
-.sc-root{color:var(--folium-primary,#e8e8ec);font-family:var(--folium-font,system-ui);display:flex;flex-direction:column;min-width:0;min-height:0;height:100%;}
-.sc-inner{display:flex;flex-direction:column;min-height:0;height:100%;}
+.sc-root{color:var(--folium-primary,#e8e8ec);font-family:var(--folium-font,system-ui);display:flex;flex-direction:column;min-width:0;min-height:0;}
+.sc-inner{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;}
 .sc-head{display:flex;align-items:flex-start;gap:8px;padding:0 0 9px;}
 .sc-head-main{min-width:0;flex:1;}
 .sc-song{font-size:15px;font-weight:700;line-height:1.35;word-break:break-word;}
@@ -638,83 +643,54 @@ ${TAB_SEL}:has(> svg)::before{
         let disposed = false;
 
         /* ----------------------------- 高度自适应 -----------------------------
-           宿主的页签容器只保证宽度（fill: false + w-full），高度不是它管的。
-           于是 height:100% 会解析成某个偏大的值：内容不溢出、内部不滚动，
-           多出来的部分被外层裁掉，表现就是「滚不动」。
-           这里量出外层滚动容器的可视高度，把 root 钉成 px；量不到就退回
-           不限高 + 交给外层滚动，保证任何一种情况都能滚。
+           宿主的页签容器不给高度，而且它的高度是从我们这里量出去的：
+           ResizeObserver 量「内容区」的高度 → 写回外层折叠容器的 height。
+           所以任何「量容器剩下多少、再把自己的高度钉成那个值」的写法都是回环：
+           一旦某次量到的是矮内容（非网易云曲目只有一行提示），外层容器矮了，
+           下次再量还是那么矮，高度就永久卡死，切到有评论的曲目也长不回来。
+
+           正确做法是只单向地给上限，不读自己的高度：
+             · 用宿主给的页签可用高度 --pn-tab-room（宿主官方页签也用这个值算高度；
+               自定义属性会继承进 shadow root，读到的是宿主算好的数）；
+             · 读不到就不设上限，让宿主的滚动容器接管——宁可让整块面板滚，
+               也不能拿一个猜出来的上限把内容锁死。
+           内容矮 → 自然矮；内容高 → 撑到上限，列表内部滚动。两头都不会卡死。
         ------------------------------------------------------------------ */
 
-        let fittedHeight = 0;
+        const MAX_HEIGHT_MARGIN = 12;
+        let appliedMaxHeight = '';
 
-        const releaseHeight = () => {
-          if (fittedHeight === 0) return;
-          fittedHeight = 0;
-          root.style.height = 'auto';
-          root.style.maxHeight = 'none';
-          root.style.overflow = 'visible';
-          body.style.overflowY = 'visible';
+        // 宿主把「页签内容的可用高度」放在 --pn-tab-room 上（它自己的队列页签也用这个值
+        // 算列表高度）。自定义属性会继承进 shadow root，所以直接读到的是宿主算好的数，
+        // 不用自己去猜 header / 底栏占了多少。
+        const hostTabRoom = () => {
+          try {
+            const value = getComputedStyle(root).getPropertyValue('--pn-tab-room').trim();
+            return value && value !== 'initial' && value !== 'none' ? value : '';
+          } catch (_) {
+            return '';
+          }
         };
 
-        const fitHeight = () => {
+        const applyMaxHeight = () => {
           if (disposed || !root.isConnected) return;
-          const rect = root.getBoundingClientRect();
-          if (!rect.width || !rect.height) return; // 不在前台，量不到
-          if (rect.top < 0) return; // 面板已经被滚出视口，这会儿别改高度
+          if (!root.getBoundingClientRect().width) return; // 不在前台，量不到就不用算
+          const room = hostTabRoom();
+          // 拿不到宿主变量就干脆不设上限：内容自然排开，交给宿主的滚动容器去滚。
+          // 退而用「视口底 − 我的顶」是不行的——面板底边锚定、高度由内容撑出来，
+          // 内容一矮顶就下移，兜底值跟着变小，又会把高度锁死在矮内容那一档。
+          const next = room ? `calc(${room} - ${MAX_HEIGHT_MARGIN}px)` : '';
+          if (next === appliedMaxHeight) return;
+          appliedMaxHeight = next;
+          root.style.maxHeight = next;
+        };
 
-          // 往上找能当边界用的祖先：先找滚动容器，再找高度写死的裁切容器。
-          // 模组挂在 shadow root 里，普通 parentElement 会断在半路，要跨 shadow 边界。
-          let host = null;
-          let node = root.parentElement;
-          let depth = 0;
-          while (node && depth < 16) {
-            const style = getComputedStyle(node);
-            const overflowY = String(style.overflowY || '');
-            const boxes = node.clientHeight > 0;
-            if (boxes && (overflowY === 'auto' || overflowY === 'scroll')) {
-              host = node;
-              break;
-            }
-            if (boxes && overflowY === 'hidden' && String(style.height || '') !== 'auto') {
-              host = node;
-              break;
-            }
-            const scope = typeof node.getRootNode === 'function' ? node.getRootNode() : null;
-            const parent = node.parentElement || (scope && scope.host ? scope.host : null);
-            if (!parent || parent === document.body || parent === document.documentElement) break;
-            node = parent;
-            depth += 1;
-          }
-
-          let available;
-          if (host) {
-            const hostRect = host.getBoundingClientRect();
-            const style = getComputedStyle(host);
-            const padTop = parseFloat(style.paddingTop) || 0;
-            const padBottom = parseFloat(style.paddingBottom) || 0;
-            available = hostRect.bottom - padBottom - Math.max(hostRect.top + padTop, rect.top);
-          } else {
-            available = window.innerHeight - rect.top - 12;
-          }
-
-          if (!Number.isFinite(available) || available < 160) {
-            releaseHeight();
-            return;
-          }
-
-          const next = Math.floor(available);
-          if (fittedHeight > 0) {
-            const delta = next - fittedHeight;
-            if (Math.abs(delta) < 1.5) return;
-            // 宿主容器高度跟着内容长起来时，别被自己越撑越大
-            if (delta > 0 && delta < 40) return;
-          }
-
-          fittedHeight = next;
-          root.style.height = next + 'px';
-          root.style.maxHeight = next + 'px';
-          root.style.overflow = 'hidden';
-          body.style.overflowY = 'auto';
+        // 内容变化（骨架 → 列表 / 列表 → 状态文案）后立刻重算一次，别等 ticker。
+        const scheduleMaxHeight = () => {
+          const raf = typeof requestAnimationFrame === 'function'
+            ? requestAnimationFrame
+            : (callback) => setTimeout(callback, 16);
+          raf(() => applyMaxHeight());
         };
 
         const setTab = (tab) => {
@@ -838,6 +814,7 @@ ${TAB_SEL}:has(> svg)::before{
         };
 
         const paintAll = () => {
+          scheduleMaxHeight();
           paintHead();
           if (view.loading && view.list.length === 0) {
             paintSkeleton();
@@ -1095,11 +1072,11 @@ ${TAB_SEL}:has(> svg)::before{
           if (!root.isConnected) return;
           const visible = root.offsetWidth > 0 || root.offsetHeight > 0 || root.getClientRects().length > 0;
           if (!visible) return;
-          fitHeight();
+          applyMaxHeight();
           if (syncSong()) void load(true);
         }, 2000);
 
-        const onResize = () => fitHeight();
+        const onResize = () => applyMaxHeight();
         window.addEventListener('resize', onResize);
 
         syncSong();
@@ -1108,7 +1085,7 @@ ${TAB_SEL}:has(> svg)::before{
         const raf = typeof requestAnimationFrame === 'function'
           ? requestAnimationFrame
           : (callback) => setTimeout(callback, 16);
-        raf(() => fitHeight());
+        raf(() => applyMaxHeight());
 
         return () => {
           disposed = true;

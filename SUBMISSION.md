@@ -1,12 +1,12 @@
 # 发布记录 · 歌曲评论 song-comments
 
-## 当前状态（v1.1.0）
+## 当前状态（v1.1.1）
 
 | 项 | 状态 |
 |---|---|
-| 已收录版本 | **1.0.2**（已上架）；1.0.3 已推 tag，更新 issue 是否提交见 `ISSUE-LINKS.md` |
-| 本次版本 | **1.1.0**：适配 Folia 0.8.0 |
-| 代码 | `song-comments/client.mjs` · **102 项断言全绿** |
+| 已收录版本 | **1.0.2**（已上架）；1.0.3 / 1.1.0 已推 tag，更新 issue 是否提交见 `ISSUE-LINKS.md` |
+| 本次版本 | **1.1.1**：修「面板高度卡在上一首那一档」 |
+| 代码 | `song-comments/client.mjs` · **102 项断言全绿** + 2 个 Chromium 布局探针（6 + 10 项） |
 | 真机验证 | Folia **0.8.0**（模组 API 1.10），已同步 + 重新授权，digest 一致 |
 | 仓库 | <https://github.com/Zhangyx0824/folia-mod-song-comments> |
 | 剩下的事 | 推 tag → 打开「模组更新」表单（链接在 `ISSUE-LINKS.md`） |
@@ -126,7 +126,7 @@ resolve "非正式主题曲" source=qq dtoId=121597355 neteaseId=- via=none
 
 ### 1. 模组更新（folium-compound）
 
-链接在 `ISSUE-LINKS.md` 第 2 节（`mod-update.yml`，`ref` 改成 `v1.1.0` 后重跑 `test/build_issue_urls.mjs`）。
+链接在 `ISSUE-LINKS.md` 第 2 节（`mod-update.yml`，`ref` 改成 `v1.1.1` 后重跑 `test/build_issue_urls.mjs`）。
 **不要重开提交 issue**；CI 会从登记的仓库取 tag、检查版本号必须比当前高。
 
 ### 2. 上游功能建议（folia-major，可选）
@@ -183,3 +183,15 @@ $NODE test/build_issue_urls.mjs
   截图方式 `screencapture -l <窗口 id>` 整窗截取，未裁剪未后期。
 - 表单各栏：模组 id `song-comments`、仓库 `https://github.com/Zhangyx0824/folia-mod-song-comments`、
   目录 `song-comments`、渠道「正式发布 / Release」、许可证 MIT。
+
+---
+
+## 四、1.1.1 修了什么（审核可能会问）
+
+**现象**：当前曲目不是网易云的时候点评论，面板高度只够一行提示；点下一曲（这首在网易云有评论），高度不变，评论显示不全，且来回切歌都保持那个高度。
+
+**根因**：宿主把页签内容的高度用 `ResizeObserver` 量回去，当外层折叠容器（`st-t-unfold`）的 `height`。1.0.1 的 `fitHeight()` 又用「该容器底 − 自己的顶」算可用高度并把根节点钉成 px——**量的是自己撑出来的空间**，矮内容量出矮容器，下次再量还是那么矮，回环锁死；`高度变大 < 40px 就忽略` 的阈值又刚好把它按住不涨。
+
+**修法**：只单向给上限，不再读任何由自身高度决定的尺寸。`max-height: calc(var(--pn-tab-room) - 12px)`，其中 `--pn-tab-room` 是宿主下发的「页签可用高度」（宿主自己的队列页签也用这个值算高度，自定义属性会继承进 shadow root）。内容矮 → 自然矮；内容高 → 撑到上限后列表内部滚动。宿主没有这个变量时不设上限，交给宿主滚动容器，绝不锁死。
+
+**没有新增权限、没有改数据请求**：只改了布局。验证方式：`test/probe_grow.mjs` 按真实面板外壳（底边锚定 + `max-height` + 内容高度回写 + shadow root）复现了原 bug，覆盖「矮内容 → 切歌 → 高度要长回来 / 切回去要缩回来 / 无宿主变量 / 变量是嵌套 calc」。

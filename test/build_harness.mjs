@@ -40,7 +40,7 @@ const html = `<!doctype html>
   html,body{margin:0;height:100%;background:#111114;font-family:-apple-system,"PingFang SC",system-ui;}
   #stage{display:flex;height:100%;align-items:center;justify-content:center;gap:24px;}
   .panel{width:380px;height:600px;background:#17171b;border-radius:16px;padding:18px 18px 14px;box-sizing:border-box;
-    --folium-primary:#ececf0;--folium-font:-apple-system,"PingFang SC",system-ui;display:flex;}
+    --folium-primary:#ececf0;--folium-font:-apple-system,"PingFang SC",system-ui;--pn-tab-room:568px;display:flex;}
   .panel > div{flex:1;min-height:0;}
   body.light{background:#e9e9ec;}
   body.light .panel{background:#fbfbfc;--folium-primary:#1b1b1f;box-shadow:0 4px 24px rgba(0,0,0,.08);}
