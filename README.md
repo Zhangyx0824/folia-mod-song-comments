@@ -44,13 +44,24 @@ Folia（Folium 1）模组：播放页进度条右侧多一个评论按钮，点�
 
 ## 已知限制
 
-- **QQ 音乐、汽水、酷狗的评论拿不到。** 宿主 `foliumShared.json` 只开放了 `platform.netease.read/write` 这一组平台直通权限，其余 provider 没有等价入口；自己签名去调 QQ 的接口既不稳定也不该塞进模组里。这些曲目的评论走「按歌名匹配网易云同名曲目」。
+- **QQ 音乐、汽水、酷狗的评论拿不到，而且不是「换个接口」的事。** 两条路都堵死：
+  - 宿主侧：`platform.raw` 只认 `platform.netease.read/write` 这一组权限，内部端点表（`comment_music` / `comment_hot` / `search` …）也只挂在 NetEase 上。`request('qq', …)` 会在 `describeRawEndpoint` 那一步返回 `unsupported`，连权限都没走到。
+  - 自己抓：`folium.net.fetch` 由主进程用 Node 的 fetch 发出，**没有域名白名单**，技术上能打任意 https。但实测（2026-11-26，大陆家宽直连）三家都拿不到：QQ `musicu.fcg` 的 `music.globalComment.CommentRead` 只回 `code 10000` + 空列表（评论读取要登录态 cookie），老的 `fcg_global_comment_hot` 已 404；酷狗 `mobiles.kugou.com/api/v3/comment/list` 直接 `Access Deny !!!`（要签名的 `code` + cookie）；汽水没有公开接口，参数要 `a_bogus` 签名。Spotify / YouTube Music 本身就没有「歌曲评论」这个功能。
+  - 结论：要真做多平台评论区，得让用户把自己的登录 cookie 交给模组、再逐平台实现签名算法——维护成本无底洞，且不该出现在一个只读展示的模组里。所以这些曲目的评论走「按歌名 + 歌手匹配网易云同名曲目」，匹配不到就在面板里说清楚是哪个平台的曲目。
+- **兼容范围：Folia 0.7.21 及以上，含 0.8.0。** 0.8.0（模组 API 1.10）把公开的 song DTO 砍成 `{id, title, artist, album, source, ref}`：`artist` / `album` 变成字符串、没有 `durationMs` / `coverUrl` / `artists[]`、`sourceRef` 换成 `source`。本模组两种形态都认——0.7 走 `sourceRef.mediaId`，0.8 走 `source === 'netease'` 时的 `id`（宿主 `oe()` 里就是 `String(e.id)`，即平台原生曲目 id），并且只接受纯数字 id，不是就走歌名检索，绝不会把 QQ 的曲目号当网易云 id 发出去。
 - `platform.raw` 是**实验性**接口，宿主小版本更新可能改行为。所以：拿不到接口时不报错崩溃，而是在面板里显示「宿主没有开放这个网易云接口」并给重试按钮。
 - 面板是标准的播放器侧栏页签，不是浮层——宿主决定宽度与主题，模组只负责内容。
 - **页签图标依赖一个非公开属性。** `data-ponder-panel-tab-button` 是宿主引导系统用的，不属于公开 API。宿主改名后图标会退回拼图（面板功能不受影响）。已经向 `chthollyphile/folia-major` 提了 feature request（`FEATURE-REQUEST.md`），等 `playerPanelTabs` 支持 `icon` 字段就改回官方用法并删掉这段 CSS。
 - 宿主的页签容器只保证**宽度**（`fill: false` + `w-full`），高度不由它兜底，而且模组挂在 shadow root 里。所以模组自己向上找「滚动容器 / 高度写死的裁切容器」来量可用高度（跨 shadow 边界），量到就把根节点钉成 px、列表内滚；量不到就退回不限高、交给外层滚动。两种情况都能滚，不会出现「内容被裁掉且滑不动」。
 
 ## 更新日志
+
+**1.1.0**
+- 适配 **Folia 0.8.0**（模组 API 1.10）。`mod.json` 的 `folia` 从 `">=0.7.21 <0.8.0"` 改成 `">=0.7.21"`——原来那个上界会让模组在 0.8.0 上**装了但不加载**，而且不一定有显眼报错。
+- 0.8.0 的 song DTO 换成 `{id, title, artist, album, source, ref}`（`artist`/`album` 变字符串、`sourceRef` 消失）。新增 `songSourceOf` / `songArtistOf` / `songAlbumOf` 三个归一化函数，两种 DTO 形态都能读；精确命中改用 `source === 'netease'` 时的 `id`，并只认纯数字（别的平台的曲目号绝不会发到网易云接口）。
+- 面板状态文案分清两种情况：匹配开关关着 → 「…是关着的，不会去网易云找版本」；开了但没匹配到 → 「在网易云没找到《X》的对应版本（当前是 QQ 音乐的曲目）」。之前两种情况共用一句话，会误导。
+- 启动打一行 `ready (Folia 0.8.0 / mod API 1.10)`，每次解析曲目再打一行 `resolve "标题" source=… dtoId=… neteaseId=… via=…`。宿主再改 DTO 形态时，看这行就知道取到了什么。
+- 测试：82 → 102 项，新增 0.8.0 DTO 三组场景（NetEase 精确命中 / QQ 曲目走检索且不串号 / 非数字 id 退回检索）、`folia` 上界回归断言、平台名文案断言。
 
 **1.0.3**
 - 新增：「评论」页签有自己的图标（对话气泡）。宿主 0.7.x 的 `playerPanelTabs` 会丢掉 `icon` 字段，所以走官方 `styles` 注册表注入一条作用域限死在自己页签按钮上的 CSS：隐藏宿主画的拼图 svg，用 `mask-image` + `background-color: currentColor` 画 16px 气泡。只影响本模组页签，不碰别的模组、不改宿主 DOM、不需要新权限。

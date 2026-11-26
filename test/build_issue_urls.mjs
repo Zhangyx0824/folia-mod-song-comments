@@ -75,17 +75,21 @@ const featureUrl =
 
 /* ------------------------------------------------------------- 2. 模组更新 */
 
-const changes = `1.0.3 · 页签有自己的图标
+const changes = `1.1.0 · 适配 Folia 0.8.0
 
-【界面】播放器侧栏的「评论」页签现在显示对话气泡图标，不再是所有模组共用的拼图。仅当侧栏窄到只显示图标时可见（这是宿主的降级策略）；放得下文字时仍然是「评论」两个字，和其他页签一致。
+【兼容】Folia 0.8.0（模组 API 1.10）把公开的歌曲数据砍成了 { id, title, artist, album, source, ref }：歌手与专辑变成字符串、sourceRef 消失、时长与封面不再提供。本版本同时兼容 0.7.x 与 0.8.0，两个形态都能读；mod.json 的 folia 范围从 ">=0.7.21 <0.8.0" 改成 ">=0.7.21"，原来那个上界会让模组在 0.8.0 上静默不加载。
 
-【实现】宿主 0.7.x 的 playerPanelTabs 不接受 icon 字段（渲染层统一写死 lucide Puzzle），所以本模组改用官方 styles 注册表注入一条 CSS，用 [data-ponder-panel-tab-button*="song-comments"] 只匹配自己那个页签按钮，把宿主画的 svg 换成 16px 的 mask 图标（currentColor，跟随常态/选中/hover 颜色）。不碰其他模组、不改宿主 DOM、不需要新权限。
+【精确匹配】0.8.0 下网易云曲目改用 source === 'netease' 时的 id（宿主里就是 String(e.id)，即平台原生曲目 id）。这里加了纯数字校验：0.8 的 id 是"当前平台"的曲目号，QQ 曲目拿到的是 QQ 号码，绝不能当成网易云 id 去请求评论，否则会显示别人的评论区。
 
-【说明】提交 1.0.2 时说明里写的「不注入全局样式」现在需要修正：本版本确实注入了一条全局 CSS，但它通过官方 styles 注册表（宿主会包进 @layer folium-mods），选择器只命中本模组页签，不影响其他模组与宿主界面。权限未变，仍是 platform.netease.read（只读）+ experimental platform.raw。
+【文案】之前"匹配开关关着"和"真的没匹配到"共用一句话，会误导。现在分开说：开关关着就明说开关关着；开着但没匹配到就说"在网易云没找到《X》的对应版本（当前是 QQ 音乐的曲目）"。
 
-【风险】data-ponder-panel-tab-button 是宿主引导系统用的属性，不是公开 API。宿主改名后图标会退回拼图，但面板功能不受影响；已向上游提 feature request，等 playerPanelTabs 支持 icon 字段后立刻改回官方用法并删掉这段 CSS。
+【页签图标（1.0.3 起）】侧栏的"评论"页签显示对话气泡图标，不再是所有模组共用的拼图。宿主不接受 playerPanelTabs 的 icon 字段，所以用官方 styles 注册表注入一条 CSS，选择器只命中本模组页签按钮，把宿主画的 svg 换成 16px 的 mask 图标（currentColor，跟随常态/选中/hover）。不碰其他模组、不改宿主 DOM、不需要新权限。
 
-【其他】测试项从 67 加到 82 项，新增页签图标样式的作用域、遮罩、currentColor、重复激活不重复注入、以及没有 styles 注册表时的兜底。`;
+【说明】1.0.2 的说明写着"不注入全局样式"，这条需要修正：之后确实通过官方 styles 注册表注入了一条 CSS（宿主会包进 @layer folium-mods），作用域限死在本模组页签。权限未变，仍是 platform.netease.read（只读）+ experimental platform.raw。
+
+【未做】没有实现多平台评论区切换。宿主只对模组开放了网易云一个平台的直通权限；自己调其他平台接口也走不通（QQ 评论读取要登录 cookie、老接口已 404，酷狗返回 Access Deny，汽水要签名，Spotify 与 YouTube Music 本身没有歌曲评论）。非网易云曲目继续按"歌名 + 歌手"匹配网易云同名曲目。
+
+【其他】测试从 82 项加到 102 项，新增 0.8.0 歌曲数据的三种场景（网易云精确命中 / QQ 曲目走检索且不串号 / 非数字 id 退回检索）、folia 范围回归断言、平台名文案断言。`;
 
 const updateUrl =
   'https://github.com/chthollyphile/folium-compound/issues/new' +

@@ -1,6 +1,10 @@
-// song-comments/client.mjs — 歌曲评论 v1.0.3
+// song-comments/client.mjs — 歌曲评论 v1.1.0
 //
 // 播放页进度条右侧的评论按钮 → 播放器侧栏「评论」页签，显示当前歌曲在网易云音乐的评论。
+//
+// 宿主兼容：0.7.x 的 song DTO 带 sourceRef{providerId, mediaId}；0.8.0 换成
+// source（平台 id）+ id（平台原生曲目 id）+ ref（队列令牌）。两种形态都认，
+// 见下面的 songSourceOf / rawIdOf。
 //
 // 数据来源：Folium 实验性 platform.raw（manifest 里声明 experimental: ["platform.raw"]
 // 与 permissions: ["platform.netease.read"]）。用到的白名单 endpoint：
@@ -89,6 +93,13 @@ export default function activate(folium) {
       if (typeof folium.log?.warn === 'function') folium.log.warn(`[song-comments] ${message}`);
     } catch (_) {}
   };
+
+  // 宿主版本写进日志：以后排查「到底是哪个版本不兼容」省事。
+  {
+    const minor = Number(folium.host?.folium?.minor) || 0;
+    const app = String(folium.host?.folia || '');
+    log(`ready (Folia ${app || 'unknown'} / mod API 1.${minor})`);
+  }
 
   /* ------------------------------------------------------------------ 设置 */
 
@@ -217,6 +228,9 @@ export default function activate(folium) {
     qishui: '汽水音乐',
     spotify: 'Spotify',
     ytm: 'YouTube Music',
+    local: '本地文件',
+    navidrome: 'Navidrome',
+    stage: '外部播放',
   };
 
   const platformLabel = (providerId) => PLATFORM_LABEL[providerId] || String(providerId || '');
@@ -259,10 +273,42 @@ export default function activate(folium) {
     return score;
   };
 
+  // 0.7.x：song.sourceRef = { kind:'online', providerId, mediaId }
+  // 0.8.0：song.source = 'netease' | 'qq' | 'local' | 'navidrome' | 'stage'，且没有 sourceRef。
+  const songSourceOf = (song) => {
+    const ref = song?.sourceRef;
+    if (ref && typeof ref === 'object' && ref.providerId) return String(ref.providerId);
+    if (typeof song?.source === 'string' && song.source) return song.source;
+    return '';
+  };
+
+  const songArtistOf = (song) => {
+    if (!song) return '';
+    if (typeof song.artist === 'string') return song.artist.trim();
+    const list = Array.isArray(song.artists) ? song.artists : [];
+    return list
+      .map((entry) => (typeof entry === 'string' ? entry : String(entry?.name || '')))
+      .filter(Boolean)
+      .join(' / ');
+  };
+
+  // 0.8.0 的 album 是字符串，0.7 的可能是 { name }。两种都读。
+  const songAlbumOf = (song) => {
+    const album = song?.album;
+    if (typeof album === 'string') return album;
+    if (album && typeof album === 'object') return String(album.name || '');
+    return '';
+  };
+
   const rawIdOf = (song) => {
     const ref = song?.sourceRef;
-    if (ref && ref.kind === 'online' && ref.providerId === 'netease' && ref.mediaId) {
-      return String(ref.mediaId);
+    if (ref && ref.providerId === 'netease' && ref.mediaId) return String(ref.mediaId);
+    if (song && typeof song.source === 'string') {
+      if (song.source !== 'netease') return null;
+      // 0.8.0 公开 DTO 的 id 是平台原生曲目 id（宿主 oe() 里就是 String(e.id)）。
+      // 网易云曲目 id 一定是纯数字；不是的话宁可走歌名检索，也别拿别的平台的号码去查评论。
+      const id = song.id === undefined || song.id === null ? '' : String(song.id);
+      if (/^\d+$/.test(id)) return id;
     }
     return null;
   };
@@ -574,6 +620,7 @@ ${TAB_SEL}:has(> svg)::before{
         const view = {
           songKey: null,
           song: null,
+          songSource: '', // 'netease' | 'qq' | 'local' …（0.8.0 的 source 字段）
           id: null,
           source: null, // 'exact' | 'search'
           match: null,
@@ -805,15 +852,35 @@ ${TAB_SEL}:has(> svg)::before{
           }
           if (view.list.length === 0) {
             if (!view.id) {
-              paintState(
-                view.song
-                  ? esc(
-                      t(
-                        '这首曲目没有网易云版本，暂时看不到评论。可在设置里重新启用「非网易云曲目按歌名匹配」。',
-                        'This track has no NetEase version, so there are no comments. You can turn "Match other sources by title" back on in the settings.'
-                      )
+              if (!view.song) {
+                paintState(esc(t('播放一首歌再来看评论。', 'Play a song to read its comments.')));
+                return;
+              }
+              const settings = readSettings();
+              if (!settings.matchBySearch) {
+                paintState(
+                  esc(
+                    t(
+                      '「非网易云曲目按歌名匹配」是关着的，这类曲目不会去网易云找版本。可在设置里打开。',
+                      '"Match other sources by title" is off, so NetEase is not searched for this track. You can turn it on in the settings.'
                     )
-                  : esc(t('播放一首歌再来看评论。', 'Play a song to read its comments.'))
+                  )
+                );
+                return;
+              }
+              const title = view.song.title || '';
+              const from = platformLabel(view.songSource);
+              paintState(
+                esc(
+                  t(
+                    from
+                      ? `在网易云没找到《${title}》的对应版本（当前是${from}的曲目）。`
+                      : `在网易云没找到《${title}》的对应版本。`,
+                    from
+                      ? `No NetEase version of 《${title}》 was found (this track comes from ${from}).`
+                      : `No NetEase version of 《${title}》 was found.`
+                  )
+                )
               );
               return;
             }
@@ -839,7 +906,7 @@ ${TAB_SEL}:has(> svg)::before{
           const settings = readSettings();
           if (!settings.matchBySearch) return { id: null, source: null, match: null };
           const title = String(song?.title || '').trim();
-          const artist = String(song?.artist || '').trim();
+          const artist = songArtistOf(song);
           if (!title) return { id: null, source: null, match: null };
           const found = await searchOnce(title, artist, signal);
           if (!found) return { id: null, source: null, match: null };
@@ -879,6 +946,7 @@ ${TAB_SEL}:has(> svg)::before{
           if (!song) {
             view.loading = false;
             view.song = null;
+            view.songSource = '';
             view.id = null;
             view.source = null;
             view.list = [];
@@ -894,6 +962,11 @@ ${TAB_SEL}:has(> svg)::before{
               view.id = resolution.id;
               view.source = resolution.source;
               view.match = resolution.match;
+              // 一行诊断：宿主换了 DTO 形态时，这行能直接看出取到了什么。
+              log(
+                `resolve "${view.song?.title || ''}" source=${songSourceOf(song) || '-'} ` +
+                  `dtoId=${song?.id ?? '-'} neteaseId=${view.id || '-'} via=${view.source || 'none'}`
+              );
             }
             if (!view.id) {
               view.loading = false;
@@ -943,11 +1016,14 @@ ${TAB_SEL}:has(> svg)::before{
 
         const syncSong = () => {
           const song = currentSong();
-          const key = [song?.id || '', song?.title || '', song?.artist || '', song?.sourceRef?.providerId || ''].join('\u0001');
+          const source = songSourceOf(song);
+          const key = [song?.id || '', song?.title || '', songArtistOf(song), source].join('\u0001');
           if (key === view.songKey) return false;
           view.songKey = key;
-          const album = typeof song?.album === 'string' ? song.album : song?.album?.name || '';
-          view.song = song ? { title: song.title, artist: song.artist, album } : null;
+          view.songSource = source;
+          view.song = song
+            ? { title: String(song.title || ''), artist: songArtistOf(song), album: songAlbumOf(song) }
+            : null;
           view.id = null;
           view.source = null;
           view.match = null;

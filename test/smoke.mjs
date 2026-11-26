@@ -165,6 +165,9 @@ ok(MANIFEST.folium === 1, 'folium is 1');
 ok((MANIFEST.permissions || []).includes('platform.netease.read'), 'declares platform.netease.read');
 ok((MANIFEST.experimental || []).includes('platform.raw'), 'declares the platform.raw experimental opt-in');
 ok(MANIFEST.client === 'client.mjs', 'client entry is client.mjs');
+// 0.7 时代的 ">=0.7.21 <0.8.0" 会让模组在 0.8.0 上直接不加载（表现为装了但没生效）。
+ok(/>=/.test(String(MANIFEST.folia)), 'folia range has a lower bound');
+ok(!/<\s*0\.8/.test(String(MANIFEST.folia)), 'folia range does not cut 0.8.0 off');
 
 console.log('\nsettings schema');
 {
@@ -335,7 +338,9 @@ console.log('\npanel (no NetEase version, matching off)');
     await flush(60);
 
     eq(ctx.calls.length, 0, 'no request when matching is turned off');
-    ok(/没有网易云版本/.test(hostElement.querySelector('.sc-state').textContent), 'explains why there are no comments');
+    const text = hostElement.querySelector('.sc-state').textContent;
+    ok(/关着/.test(text), 'says the title-matching switch is off');
+    ok(/不会去网易云找版本/.test(text), 'explains why there are no comments');
     disposePanel();
     ctx.disposer?.();
 }
@@ -445,6 +450,99 @@ console.log('\npanel (empty comment list)');
     const disposePanel = tab.mount(hostElement, { locale: 'zh-CN' });
     await flush(60);
     ok(/热门评论/.test(hostElement.querySelector('.sc-state').textContent), 'empty hot list points at 最新');
+    disposePanel();
+}
+
+console.log('panel (0.8.0 DTO: NetEase track, id is the provider id)');
+{
+    // 0.8.0 的公开 DTO：{ id, title, artist, album, source, ref }，没有 sourceRef。
+    const song = {
+        id: '1901371647',
+        title: '测试歌曲',
+        artist: '歌手A',
+        album: '测试专辑',
+        source: 'netease',
+        ref: 'song-c9',
+    };
+    const built = makeHost({ getSong: () => song, reply: replyFor });
+    built.host.host = { folium: { major: 1, minor: 10 }, folia: '0.8.0' };
+    const module = await import(pathToFileURL(CLIENT).href);
+    module.default(built.host);
+    const tab = built.registrations.playerPanelTabs[0];
+    const hostElement = document.getElementById('panel-host');
+    hostElement.innerHTML = '';
+    const disposePanel = tab.mount(hostElement, { locale: 'zh-CN' });
+    await flush(60);
+
+    const commentCall = built.calls.find((call) => call.endpoint === 'comment_hot');
+    ok(commentCall !== undefined, 'asks for comments');
+    eq(commentCall.params.id, '1901371647', 'uses the provider-native id from the 0.8 DTO');
+    eq(built.calls.filter((call) => call.endpoint === 'search').length, 0, 'a NetEase track needs no search');
+    const root = hostElement.querySelector('.sc-root');
+    ok(/来自网易云音乐/.test(root.querySelector('.sc-match').textContent), 'labelled as a direct hit');
+    eq(root.querySelector('.sc-artist').textContent, '歌手A · 测试专辑', 'artist + album read from the flat 0.8 fields');
+    disposePanel();
+}
+
+console.log('panel (0.8.0 DTO: QQ track, provider id must not be used as a NetEase id)');
+{
+    const song = { id: '97773', title: '测试歌曲', artist: '歌手A', album: '测试专辑', source: 'qq', ref: 'song-c1' };
+    const built = makeHost({ getSong: () => song, reply: replyFor });
+    built.host.host = { folium: { major: 1, minor: 10 }, folia: '0.8.0' };
+    const module = await import(pathToFileURL(CLIENT).href);
+    module.default(built.host);
+    const tab = built.registrations.playerPanelTabs[0];
+    const hostElement = document.getElementById('panel-host');
+    hostElement.innerHTML = '';
+    const disposePanel = tab.mount(hostElement, { locale: 'zh-CN' });
+    await flush(60);
+
+    eq(built.calls[0].endpoint, 'search', 'searches by title when the track is not NetEase');
+    eq(built.calls[0].params.keywords, '测试歌曲 歌手A', 'keywords come from the flat artist field');
+    const commentCall = built.calls.find((call) => call.endpoint === 'comment_hot');
+    eq(commentCall.params.id, '999', 'asks for the matched NetEase id');
+    ok(
+        built.calls.every((call) => call.params.id !== '97773'),
+        'never passes the QQ song id to a NetEase endpoint'
+    );
+    ok(/按歌名匹配到/.test(hostElement.querySelector('.sc-match').textContent), 'match is labelled');
+    disposePanel();
+}
+
+console.log('panel (0.8.0 DTO: NetEase track with a non-numeric id)');
+{
+    // 万一宿主把 id 换成了内部令牌，也不能拿它去查评论——退回歌名检索。
+    const song = { id: 'song-c9', title: '测试歌曲', artist: '歌手A', album: null, source: 'netease', ref: 'song-c9' };
+    const built = makeHost({ getSong: () => song, reply: replyFor });
+    const module = await import(pathToFileURL(CLIENT).href);
+    module.default(built.host);
+    const tab = built.registrations.playerPanelTabs[0];
+    const hostElement = document.getElementById('panel-host');
+    hostElement.innerHTML = '';
+    const disposePanel = tab.mount(hostElement, { locale: 'zh-CN' });
+    await flush(60);
+    eq(built.calls[0].endpoint, 'search', 'falls back to search instead of trusting a non-numeric id');
+    disposePanel();
+}
+
+console.log('panel (no match: the source platform is named)');
+{
+    const song = { id: '97773', title: '孤勇者', artist: '陈奕迅', album: '', source: 'qq', ref: 'song-c2' };
+    const built = makeHost({
+        getSong: () => song,
+        reply: (endpoint) => (endpoint === 'search' ? { result: { songs: [] } } : {}),
+    });
+    const module = await import(pathToFileURL(CLIENT).href);
+    module.default(built.host);
+    const tab = built.registrations.playerPanelTabs[0];
+    const hostElement = document.getElementById('panel-host');
+    hostElement.innerHTML = '';
+    const disposePanel = tab.mount(hostElement, { locale: 'zh-CN' });
+    await flush(60);
+    const state = hostElement.querySelector('.sc-state');
+    ok(state !== null, 'empty state rendered');
+    ok(/孤勇者/.test(state.textContent), 'names the track that had no version');
+    ok(/QQ 音乐/.test(state.textContent), 'says which platform the track came from');
     disposePanel();
 }
 

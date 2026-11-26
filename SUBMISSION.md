@@ -1,84 +1,174 @@
 # 发布记录 · 歌曲评论 song-comments
 
-## 当前状态（v1.0.3）
+## 当前状态（v1.1.0）
 
 | 项 | 状态 |
 |---|---|
-| 已收录版本 | **1.0.2**（已提交上架） |
-| 本次版本 | **1.0.3**：页签图标 |
-| 代码 | `song-comments/client.mjs` · 82 项断言全绿 |
+| 已收录版本 | **1.0.2**（已上架）；1.0.3 已推 tag，更新 issue 是否提交见 `ISSUE-LINKS.md` |
+| 本次版本 | **1.1.0**：适配 Folia 0.8.0 |
+| 代码 | `song-comments/client.mjs` · **102 项断言全绿** |
+| 真机验证 | Folia **0.8.0**（模组 API 1.10），已同步 + 重新授权，digest 一致 |
 | 仓库 | <https://github.com/Zhangyx0824/folia-mod-song-comments> |
-| 剩下的事 | 推 tag → 打开「模组更新」表单 → 打开上游「功能建议」 |
-
-**两个点击动作的预填链接在 [`ISSUE-LINKS.md`](./ISSUE-LINKS.md)**，由 `test/build_issue_urls.mjs` 生成，改文案后重跑即可。
+| 剩下的事 | 推 tag → 打开「模组更新」表单（链接在 `ISSUE-LINKS.md`） |
 
 ---
 
-## 一、这次改了什么（写进更新说明的版本）
+## 一、这次改了什么
 
-宿主 0.7.x 的 `playerPanelTabs` 不接受 `icon` 字段：注册项传了也会被丢掉，渲染层统一画 lucide `Puzzle`，
-而且只有侧栏窄到放不下文字时才画图标——于是所有模组页签长得一模一样。
+### 1. `folia` 上界必须去掉（否则根本不会加载）
 
-1.0.3 用官方 `styles` 注册表注入一条 CSS：
-
-```css
-[data-ponder-panel-tab-button*="song-comments"] svg{display:none}
-[data-ponder-panel-tab-button*="song-comments"] > span:has(svg)::before{
-  content:"";width:16px;height:16px;background-color:currentColor;
-  mask-image:url("data:image/svg+xml,…message-circle…");mask-size:16px 16px;
-}
+```diff
+- "folia": ">=0.7.21 <0.8.0"
++ "folia": ">=0.7.21"
 ```
 
-- 选择器只命中本模组的页签按钮，**不碰**其他模组与宿主界面。
-- `:has(svg)` 保证只在宿主真的画了图标（窄侧栏、未选中）时替换；标签模式完全不动。
-- `currentColor` 让图标自动跟随常态 / 选中 / hover 颜色，不用写死颜色。
-- 图标是内联 SVG mask，不增加文件、不发网络请求。
+宿主 `parseHostRange` 的规则是「空格分隔的比较器全部满足才算通过」，所以 0.8.0 被 `<0.8.0` 挡掉，
+模组表现为**装了但完全不生效，也没有显眼报错**。改成只有下界后，0.7.21+ 与 0.8.0 都能加载。
 
-## 二、剩下的两步
+### 2. 0.8.0 把公开 song DTO 砍了
+
+真机 dump（2026-11-26，Folia 0.8.0 / API 1.10）：
+
+```js
+folium.playback.getState().song
+// { id: "121597355", title: "非正式主题曲", artist: "非正式会谈成员",
+//   album: "", source: "qq", ref: "song-y" }
+```
+
+宿主渲染层的构造函数（`dist/assets` 里）：
+
+```js
+oe = e => e ? {
+  id:     e.id == null ? null : String(e.id),          // 平台原生曲目 id
+  title:  e.name ?? '',
+  artist: (e.artists ?? []).map(a => a?.name).filter(Boolean).join(' / '),
+  album:  e.album?.name ?? null,
+  source: D(e),                                        // online ? providerId : kind
+  ref:    ie(e),                                       // song-<base36> 队列令牌
+} : null
+```
+
+对照 0.7.x：
+
+| 字段 | 0.7.x | 0.8.0 |
+|---|---|---|
+| 歌手 | `artists[{name}]` 或 `artist` | `artist` 字符串（已拼好 `A / B`） |
+| 专辑 | `album` 字符串或 `{name}` | `album` 字符串（可能是 `""`） |
+| 时长 / 封面 | `duration` / `coverUrl` | **没有**（评论面板不需要） |
+| 音源 | `sourceRef{providerId, mediaId}` | `source` + `ref`（`ref` 是队列令牌，不是曲目 id） |
+
+因此新增三个归一化函数 + 重写 `rawIdOf`：
+
+```js
+const songSourceOf = (song) =>
+  song?.sourceRef?.providerId ? String(song.sourceRef.providerId)
+  : typeof song?.source === 'string' ? song.source : '';
+
+const rawIdOf = (song) => {
+  const ref = song?.sourceRef;                                   // 0.7
+  if (ref?.providerId === 'netease' && ref.mediaId) return String(ref.mediaId);
+  if (typeof song?.source === 'string') {                        // 0.8
+    if (song.source !== 'netease') return null;
+    const id = song.id == null ? '' : String(song.id);
+    return /^\d+$/.test(id) ? id : null;                         // 只认纯数字
+  }
+  return null;
+};
+```
+
+那个 `/^\d+$/` 不是多余的：0.8 的 `id` 是**当前平台**的曲目号，
+QQ 曲目拿到的就是 QQ 的 `121597355`。少了这道闸，QQ 曲目会被当成网易云 id 去请求评论，拿到别人的评论区。
+
+### 3. 文案分清了「开关关着」和「真的没有」
+
+之前两种情况共用一句「这首曲目没有网易云版本，可在设置里重新启用…」，匹配开关明明开着的时候说这句是误导。
+现在：开关关着 → 明说开关关着；开着但没匹配到 → 「在网易云没找到《X》的对应版本（当前是 QQ 音乐的曲目）」。
+
+### 4. 诊断日志
+
+启动打一行 `ready (Folia 0.8.0 / mod API 1.10)`；每次解析曲目打一行
+
+```
+resolve "非正式主题曲" source=qq dtoId=121597355 neteaseId=- via=none
+```
+
+宿主下次再改 DTO 形态，看这一行就知道取到了什么，不用重新逆向。
+
+---
+
+## 二、为什么不做「多平台评论区切换」
+
+用户提过：网易云版权不够，能不能切到 QQ / 酷狗 / 汽水的评论区。结论是**做不了**，两条路都堵死：
+
+**宿主侧**：`platform.raw` 的权限表只有 `platform.netease.read` / `platform.netease.write`，
+端点表（`comment_music` / `comment_hot` / `search` …）也只挂在 NetEase 上。
+调用 `request('qq', …)` 会在 `describeRawEndpoint(provider, endpoint)` 返回 null 时抛 `unsupported`，
+连权限检查都走不到——换个 providerId 是死路。
+
+**自己抓**：`folium.net.fetch` 由主进程用 Node 的 fetch 发出，读代码确认**没有域名白名单**
+（只限 http(s)、5 MB、15–60 s）。所以技术上能打任意站点。但 2026-11-26 在大陆家宽实测三家全堵：
+
+| 平台 | 接口 | 结果 |
+|---|---|---|
+| QQ 音乐 | `u.y.qq.com/cgi-bin/musicu.fcg` · `music.globalComment.CommentRead` | `req.code 10000`，`CommentList.Total = 0`（评论读取要登录态 cookie） |
+| QQ 音乐 | 老 `c.y.qq.com/base/fcgi-bin/fcg_global_comment_hot` | `404`，接口已下线 |
+| 酷狗 | `mobiles.kugou.com/api/v3/comment/list` | `Access Deny !!!`（要签名的 `code` + cookie） |
+| 汽水 / 抖音 | — | 无公开接口，参数要 `a_bogus` 签名 |
+| Spotify / YT Music | — | 产品本身没有「歌曲评论」 |
+
+要真做，就得让用户把自己的登录 cookie 交给模组、再逐平台实现签名算法——维护成本无底洞，
+也不该出现在一个只读展示的模组里。所以保留现在的做法：非网易云曲目按「歌名 + 歌手」匹配网易云同名曲目，
+匹配不到就在面板里说清楚这是哪个平台的曲目。
+
+---
+
+## 三、剩下的两步
 
 ### 1. 模组更新（folium-compound）
 
-链接在 `ISSUE-LINKS.md` 第 2 节，字段：`mod-id=song-comments`、`ref=v1.0.3`、渠道保持不变、更新说明已写好。
-**不要重开提交 issue**，已收录模组走 `mod-update.yml`。CI 会从登记的仓库取新版本、检查版本号必须比当前高，
-然后给维护者一个与上个签名版本的 diff 链接。
+链接在 `ISSUE-LINKS.md` 第 2 节（`mod-update.yml`，`ref` 改成 `v1.1.0` 后重跑 `test/build_issue_urls.mjs`）。
+**不要重开提交 issue**；CI 会从登记的仓库取 tag、检查版本号必须比当前高。
 
-### 2. 上游功能建议（folia-major）
+### 2. 上游功能建议（folia-major，可选）
 
-链接在 `ISSUE-LINKS.md` 第 1 节。给宿主提 `playerPanelTabs` 支持 `icon`（lucide 图标名），
-理由与代码位置、最小改动方案、向后兼容说明都写在 [`FEATURE-REQUEST.md`](./FEATURE-REQUEST.md) 里。
-这条同时是给 `song-info`、`lyric-ai-director` 两个模组的解法——它们有签名、我改不了，只有宿主提供字段才可能区分图标。
+`playerPanelTabs` 支持 `icon` 字段。1.0.3 起本模组自己打了 CSS 补丁，这条主要是替 `song-info`、
+`lyric-ai-director` 两个有签名的模组要的。内容在 `FEATURE-REQUEST.md`。
 
 ---
 
-## 三、审核可能追问的点（答案备好）
+## 四、审核可能追问的点（答案备好）
 
 - **为什么需要 `platform.netease.read`？** 评论只能通过网易云接口读取；宿主没有为评论提供 typed API，
   `platform.raw` 是唯一正规入口，`comment_hot` / `comment_music` / `search` 三个端点都只要求 read。
 - **为什么声明 `platform.raw` 实验项？** manifest 校验强制：声明 `platform.<id>.read` 必须同时声明它。
 - **会不会写用户账号？** 不会。没申请 write，代码里没有任何写端点。
-- **1.0.2 的说明写着「不注入全局样式」，1.0.3 却注入了？** 是，需要说明：走的是官方 `styles` 注册表
-  （宿主包进 `@layer folium-mods`），选择器带 `[data-ponder-panel-tab-button*="song-comments"]`，
-  只命中本模组页签按钮；不改宿主 DOM 结构，不影响其他模组，也不需要新权限。
-- **`data-ponder-panel-tab-button` 是公开 API 吗？** 不是，是宿主引导系统用的属性。宿主改名后图标会退回拼图，
-  面板功能不受影响；已提 feature request，等官方 `icon` 字段落地就删掉这段 CSS。
+- **为什么只有网易云？** 见第二节。宿主只开放了网易云这一个 provider 的直通权限，其余平台也没有可用的公开接口。
+- **`folia` 范围为什么改成只有下界？** 原来的 `<0.8.0` 会让模组在 0.8.0 上静默不加载；代码已经同时兼容两种 DTO。
+- **0.8.0 上怎么保证不串号？** `rawIdOf` 只接受 `source === 'netease'` 且 id 为纯数字的情况；
+  其他平台的曲目一律走歌名检索，不会把别家的曲目号发给网易云。
+- **`data-ponder-panel-tab-button` 是公开 API 吗？** 不是，是宿主引导系统用的属性（0.8.0 仍在用，已核）。
+  宿主改名后图标会退回拼图，面板功能不受影响。
 - **实验接口坏了会不会崩？** 不会。接口不存在 / 端点被拒 / 权限被拒 / 未登录 / 限流 / 网络失败各有文案与重试。
 
 ---
 
-## 四、以后每次发版
+## 五、以后每次发版
 
 ```bash
 # 1. 改代码 → 改 mod.json 的 version → 跑测试
 NODE=~/.workbuddy/binaries/node/versions/22.22.2-6/bin/node
 $NODE test/smoke.mjs
 
-# 2. 同步到本机验收（--restart 顺便重启 Folia）
-./sync.sh --restart
+# 2. 同步到本机验收。⚠ 必须让 Folia 完全退出后再 sync，否则旧 digest 会被写回去
+osascript -e 'tell application "Folia" to quit'; sleep 3
+pgrep -x Folia >/dev/null && pkill -TERM -x Folia; sleep 2
+./sync.sh
+open -a Folia
 
 # 3. 提交 + 打 tag（CI 认 tag，不认 main 头）
-git add -A && git commit -m "1.0.4: …"
-git tag -a v1.0.4 -m "1.0.4"
-git push origin main && git push origin v1.0.4
+git add -A && git commit -m "1.1.1: …"
+git tag -a v1.1.1 -m "1.1.1"
+git push origin main && git push origin v1.1.1
 
 # 4. 重新生成更新表单链接
 $NODE test/build_issue_urls.mjs
@@ -93,4 +183,3 @@ $NODE test/build_issue_urls.mjs
   截图方式 `screencapture -l <窗口 id>` 整窗截取，未裁剪未后期。
 - 表单各栏：模组 id `song-comments`、仓库 `https://github.com/Zhangyx0824/folia-mod-song-comments`、
   目录 `song-comments`、渠道「正式发布 / Release」、许可证 MIT。
-- `song-comments/preview.jpg` 不能代替运行截图（那是渲染的介绍图，CI 只认 issue 里的上传附件）。
