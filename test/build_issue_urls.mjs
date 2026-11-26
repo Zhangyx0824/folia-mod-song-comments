@@ -75,7 +75,23 @@ const featureUrl =
 
 /* ------------------------------------------------------------- 2. 模组更新 */
 
-const changes = `1.1.1 · 修「面板高度卡在上一首那一档」；商店预览图换成真机运行截图
+const changes = `1.2.0 · 评论里的表情不再显示成 [名字]
+
+【现象】评论区里本该是表情的地方，显示成一串 [大笑]、[哭哭]、[认可]。
+
+【原因】网易云在接口里就把表情存成这种方括号标记，只有它自己的客户端和网页端会替换成图，模组之前是原样输出的。
+
+【为什么不用官方那张图】官方资源是 s1.music.126.net/style/web2/emt/emoji_<id>.png，21×21 的位图，高分屏上会糊；这套资源属于网页版时代，挂在老 CDN 上随时可能失效；一屏评论还要额外拉几十张图。所以换成系统 emoji：矢量、随系统主题、零额外请求。
+
+【怎么对应】名字表 100 条。59 条来自网页端 core.js 里那张官方 id 表（{"大笑":"86","爱心":"33",…}，也就是 emoji_<id>.png 的编号表），按编号语义给字形；其余是新版云村表情（[哭哭]、[装可爱]、[认可]…），官方表里没有，按名字语义补。表里查不到的名字原样保留，不猜也不删——配一个错的表情比露出标记更糟。想补名字在 EMOJI_MAP 里加一行就行。
+
+【其他】"展开 / 收起"的 150 字阈值改成按看得见的字数算，几个表情不会把短评论误判成长评论。没有新增权限、没有新增请求，仍是只读的 platform.netease.read + experimental platform.raw。
+
+【验证】jsdom 102 → 112 项（表情替换、同行多个表情、未收录兜底、<script> 仍按文本转义）；另抓 160 条真实评论统计表情标记，命中率 100%。
+
+---
+
+1.1.1 · 修「面板高度卡在上一首那一档」；商店预览图换成真机运行截图
 
 【预览图】之前那张是渲染稿；这次换成 Folia 0.8.0 真机截图（播放页 + 右侧「评论」页签）。原图 1920×960，按模组市场卡片 16:9 的裁切比例，上下补同色背景成 16:9 后缩到 1280×720，没有左右裁切，右侧评论面板完整。
 
@@ -101,26 +117,34 @@ const changes = `1.1.1 · 修「面板高度卡在上一首那一档」；商店
 
 【其他】测试从 82 项加到 102 项，新增 0.8.0 歌曲数据的三种场景（网易云精确命中 / QQ 曲目走检索且不串号 / 非数字 id 退回检索）、folia 范围回归断言、平台名文案断言。`;
 
+// 正文走文件，不进 URL：带 changes 的链接有一万四千多字符，浏览器和表单都可能截断
+// （上次就踩过——URL 一长，模板里没写进 URL 的下拉框还会被清成「无」）。
 const updateUrl =
   'https://github.com/chthollyphile/folium-compound/issues/new' +
   '?template=mod-update.yml' +
   '&title=' + q('[模组更新] 歌曲评论 song-comments') +
   '&mod-id=' + encodeURIComponent(MANIFEST.id) +
-  '&ref=' + encodeURIComponent('v' + MANIFEST.version) +
-  '&changes=' + q(changes);
+  '&ref=' + encodeURIComponent('v' + MANIFEST.version);
+
+fs.writeFileSync(path.resolve(__dirname, '../UPDATE-BODY.md'), changes + '\n');
 
 const out = [
   '# 提交记录与剩下的动作（v' + MANIFEST.version + '）',
   '',
-  '## 1. 模组更新（folium-compound）· 已提交',
+  '## 1. 模组更新（folium-compound）· 待提交',
   '',
-  '- issue：<https://github.com/chthollyphile/folium-compound/issues/208>',
-  '- 内容：模组 id `song-comments`、版本 `v1.1.1`、渠道 / 分类「保持不变」、确认项已勾选',
-  '- 说明正文写在 `test/build_issue_urls.mjs` 的 `changes` 里，改完重跑本脚本即可拿到新的预填链接',
+  '- 上一次：**#208**（v1.1.1，CI 格式检查通过，等维护者 `/sign`）',
+  '- 本次：**v' + MANIFEST.version + '**，要为它新开一个更新 issue（不要往 #208 里追加）',
   '',
-  '需要重开时用这个预填链接（长 URL，字段已填好，只差勾确认项）：',
+  '### 步骤',
   '',
-  updateUrl,
+  '1. 打开下面的链接（只带 template / title / mod-id / ref 四个字段）：',
+  '',
+  '   ' + updateUrl,
+  '',
+  '2. 表单里 **渠道 = 保持不变**、**分类 = 保持不变**。URL 里带参数时，没写进 URL 的下拉框会被清成「无」，所以这两项要手动选回来。',
+  '3. 正文从 `UPDATE-BODY.md` 整段粘进「更新说明」框（不要用 URL 传，太长会被截断）。',
+  '4. 勾上确认项，提交。标签 `mod-update` 由模板自动带上；没有这个标签 CI 不会跑。',
   '',
   '## 2. 上游 feature request（folia-major）',
   '',

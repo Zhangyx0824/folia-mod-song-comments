@@ -152,8 +152,8 @@ const replyFor = (endpoint) => {
     return {};
 };
 
-const activateWith = async (options) => {
-    const built = makeHost({ ...options, reply: replyFor });
+const activateWith = async (options = {}) => {
+    const built = makeHost({ ...options, reply: options.reply || replyFor });
     const module = await import(pathToFileURL(CLIENT).href);
     const disposer = module.default(built.host);
     await flush(0);
@@ -303,6 +303,55 @@ console.log('\npanel (NetEase track)');
     ctx.listeners.get('playback.songChanged')?.();
     await flush(40);
     eq(ctx.calls.length, before, 'no requests after dispose');
+    ctx.disposer?.();
+}
+
+console.log('\npanel (comment emoji)');
+{
+    // 网易云把表情存成 [名字]。渲染时要换成字形；表里没有的名字必须原样留着，
+    // 不能猜一个相近的表情顶上（配错比不配更糟）。
+    const emojiReply = (endpoint) => {
+        if (endpoint === 'comment_hot') {
+            return {
+                total: 3,
+                hotComments: [
+                    commentBody(9, '前奏一响就知道是它[哭哭]'),
+                    commentBody(5, '[认可] 真的好听[手动狗头]，[大笑]'),
+                    commentBody(1, '这条有[神秘表情]没收录，还有<script>alert(1)</script>'),
+                ],
+            };
+        }
+        return {};
+    };
+    const ctx = await activateWith({ getSong: () => neteaseSong, reply: emojiReply });
+    const tab = ctx.registrations.playerPanelTabs[0];
+    const hostElement = document.getElementById('panel-host');
+    hostElement.innerHTML = '';
+    const disposePanel = tab.mount(hostElement, { locale: 'zh-CN' });
+    await flush(40);
+
+    const root = hostElement.querySelector('.sc-root');
+    const texts = [...root.querySelectorAll('.sc-text')];
+    eq(texts.length, 3, 'three comments rendered');
+
+    const first = texts[0].textContent;
+    ok(first.includes('前奏一响就知道是它'), 'plain text is kept');
+    ok(first.includes('😭'), '[哭哭] becomes its glyph');
+    ok(!first.includes('[哭哭]'), 'no raw marker left for a known emoji');
+
+    const second = texts[1].textContent;
+    ok(second.includes('👍') && second.includes('🐶') && second.includes('😄'), 'several emoji in one line all render');
+    eq(root.querySelectorAll('.sc-text .sc-emo').length, 4, 'glyphs are wrapped in a span that carries the emoji font');
+
+    const third = texts[2].textContent;
+    ok(third.includes('[神秘表情]'), 'an unmapped name is left exactly as written');
+    ok(!root.querySelector('.sc-text script'), 'html from a comment is escaped, not executed');
+    ok(third.includes('<script>'), 'the escaped html is visible as text');
+
+    // 展开阈值按看得见的字数算：正常长度的评论不该冒出「展开」。
+    ok(root.querySelector('.sc-more-text') === null, 'short comments stay unclamped and offer no expand button');
+
+    disposePanel();
     ctx.disposer?.();
 }
 

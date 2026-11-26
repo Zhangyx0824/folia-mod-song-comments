@@ -1,4 +1,4 @@
-// song-comments/client.mjs — 歌曲评论 v1.1.1
+// song-comments/client.mjs — 歌曲评论 v1.2.0
 //
 // 播放页进度条右侧的评论按钮 → 播放器侧栏「评论」页签，显示当前歌曲在网易云音乐的评论。
 //
@@ -62,6 +62,7 @@ const CSS = `
 .sc-nick{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%;}
 .sc-like{display:inline-flex;align-items:center;gap:3px;font-size:10.5px;opacity:.9;white-space:nowrap;flex:none;margin-left:auto;}
 .sc-text{font-size:12.5px;line-height:1.62;margin-top:3px;word-break:break-word;overflow-wrap:anywhere;white-space:pre-wrap;}
+.sc-emo{font-family:"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",system-ui;font-size:1.06em;line-height:1;vertical-align:-.12em;margin:0 .08em;}
 .sc-text.is-clamp{display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden;}
 .sc-more-text{border:0;background:transparent;color:inherit;font-size:11px;font-family:inherit;opacity:.5;padding:3px 0 0;cursor:pointer;}
 .sc-quote{font-size:11.5px;line-height:1.55;margin-top:6px;padding:6px 9px;border-radius:8px;background:rgba(128,128,128,.1);opacity:.75;word-break:break-word;}
@@ -393,6 +394,56 @@ export default function activate(folium) {
       '"': '&quot;',
       "'": '&#39;',
     })[character]);
+
+  /* -------------------------------------------------------------------- 表情
+     网易云把评论里的表情存成 [名字]（[大笑]、[哭哭]…），网页端再用一张 21px
+     的小图替换掉。这里不发请求，直接换成系统 emoji：
+       · 官方那张图是 2010 年代的位图，高分屏上会糊，老 CDN 也可能随时挂；
+       · 系统 emoji 是矢量的，深浅色主题下都清楚，还省掉几十次图片请求。
+     名字 → 字形分两批：
+       a) 网页端 core.js 里那张官方 id 表（emoji_<id>.png 对应的 59 个老表情），
+          按语义给字形；
+       b) 现在评论里更常见的是新版云村表情（[哭哭]、[装可爱]、[认可]…），
+          官方 id 表里没有，按名字语义补。
+     表里查不到的名字原样保留 —— 宁可露出 [xxx]，也不猜一个错的表情。
+  ------------------------------------------------------------------------- */
+  const EMOJI_MAP = {
+    // 老版表情（官方 id 表 33=爱心、86=大笑、100=猪 …）
+    大笑: '😄', 可爱: '🥰', 憨笑: '😁', 色: '😍', 亲亲: '😘', 惊恐: '😱',
+    流泪: '😢', 亲: '😚', 呆: '😐', 哀伤: '😞', 呲牙: '😁', 吐舌: '😛',
+    撇嘴: '😒', 怒: '😡', 奸笑: '😏', 汗: '😅', 痛苦: '😣', 惶恐: '😰',
+    生病: '🤒', 口罩: '😷', 大哭: '😭', 晕: '😵', 发怒: '😠', 开心: '😄',
+    鬼脸: '😜', 皱眉: '😟', 流感: '🤧', 爱心: '❤️', 心碎: '💔', 钟情: '😍',
+    星星: '⭐', 生气: '😤', 便便: '💩', 强: '👍', 弱: '👎', 拜: '🙏',
+    牵手: '🤝', 跳舞: '💃', 禁止: '⛔', 这边: '👉', 爱意: '💗', 示爱: '💞',
+    嘴唇: '👄', 狗: '🐶', 猫: '🐱', 猪: '🐷', 兔子: '🐰', 小鸡: '🐤',
+    公鸡: '🐓', 幽灵: '👻', 圣诞: '🎅', 外星: '👽', 钻石: '💎', 礼物: '🎁',
+    男孩: '👦', 女孩: '👧', 蛋糕: '🎂', 圈: '⭕', 叉: '❌',
+    // 新版云村表情（实测评论里出现频率最高的一批）
+    哭哭: '😭', 装可爱: '🥺', 认可: '👍', 许愿: '🌠', EMO听歌: '😔',
+    很棒: '💯', 欣赏音乐: '🎧', 抱抱你: '🤗', 多多可怜: '🥺', 乞求: '🙏',
+    多多比耶: '✌️', 红心: '❤️', 打Call: '🙌', 偷窥: '👀', 感动: '🥹',
+    笑了: '😄', 期待: '🤩', VIP: '👑', 越来越好: '📈', 庆祝: '🎉',
+    亲吻: '😘', 难过: '😔', 西西惊讶: '😲', 害羞: '☺️', 手动狗头: '🐶',
+    害怕: '😨', 笑哭了: '😂', 脸红: '😳', 蛋仔酷: '😎', 鼓掌: '👏',
+    玫瑰: '🌹', 微笑: '🙂', 思考: '🤔', 赞: '👍', 耶: '✌️', 比心: '🫰',
+    流泪猫猫头: '😿', 悟了: '🧘', 裂开: '💔', 摸鱼: '🐟', 打工人: '💼',
+  };
+
+  const EMOJI_RE = /\[([^\[\]\n]{1,10})\]/g;
+  const emojiOf = (name) => EMOJI_MAP[name] || '';
+
+  // 先转义，再替换表情标记：方括号不在 esc 的名单里，顺序反过来也不影响，
+  // 但这样插进来的标签一定是我们自己拼的，用户内容不可能变成标签。
+  const richText = (value) =>
+    esc(value).replace(EMOJI_RE, (whole, name) => {
+      const glyph = emojiOf(name);
+      return glyph ? `<span class="sc-emo">${glyph}</span>` : whole;
+    });
+
+  // 「展开/收起」按看得见的字数算：一个表情标记只占一个字的位置。
+  const displayLength = (value) =>
+    String(value ?? '').replace(EMOJI_RE, (whole, name) => (emojiOf(name) ? 'x' : whole)).length;
 
   /* --------------------------------------------------------------- 评论加载 */
 
@@ -726,13 +777,13 @@ ${TAB_SEL}:has(> svg)::before{
         };
 
         const itemHtml = (comment, settings) => {
-          const longText = comment.content.length > 150;
+          const longText = displayLength(comment.content) > 150;
           const open = view.expanded.has(comment.id);
           const avatar = settings.showAvatar && comment.avatar
             ? `<img class="sc-av" src="${esc(comment.avatar)}" alt="" loading="lazy" referrerpolicy="no-referrer" data-avatar>`
             : `<div class="sc-av">${esc(comment.name.slice(0, 1))}</div>`;
           const quote = comment.quotedText
-            ? `<div class="sc-quote"><span class="sc-reply-to">@${esc(comment.quotedName || t('某人', 'someone'))}：</span>${esc(comment.quotedText)}</div>`
+            ? `<div class="sc-quote"><span class="sc-reply-to">@${esc(comment.quotedName || t('某人', 'someone'))}：</span>${richText(comment.quotedText)}</div>`
             : '';
           const moreButton = longText
             ? `<button type="button" class="sc-more-text" data-act="expand" data-id="${esc(comment.id)}">${open ? esc(t('收起', 'Show less')) : esc(t('展开', 'Show more'))}</button>`
@@ -748,7 +799,7 @@ ${TAB_SEL}:has(> svg)::before{
             (comment.time ? '<span>' + esc(relativeTime(comment.time)) + '</span>' : '') +
             like +
             '</div>' +
-            '<div class="sc-text' + (longText && !open ? ' is-clamp' : '') + '">' + esc(comment.content) + '</div>' +
+            '<div class="sc-text' + (longText && !open ? ' is-clamp' : '') + '">' + richText(comment.content) + '</div>' +
             moreButton +
             quote +
             '</div></div>'
