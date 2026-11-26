@@ -75,7 +75,9 @@ const featureUrl =
 
 /* ------------------------------------------------------------- 2. 模组更新 */
 
-const changes = `1.1.1 · 修「面板高度卡在上一首那一档」
+const changes = `1.1.1 · 修「面板高度卡在上一首那一档」；商店预览图换成真机运行截图
+
+【预览图】之前那张是渲染稿；这次换成 Folia 0.8.0 真机截图（播放页 + 右侧「评论」页签）。原图 1920×960，按模组市场卡片 16:9 的裁切比例，上下补同色背景成 16:9 后缩到 1280×720，没有左右裁切，右侧评论面板完整。
 
 【现象】当前曲目不是网易云的时候点评论，面板高度只够显示一行提示；接着点下一曲（这首在网易云有评论），高度不变，评论显示不全，之后来回切歌都保持那个高度。
 
@@ -108,15 +110,21 @@ const updateUrl =
   '&changes=' + q(changes);
 
 const out = [
-  '# 剩下的两个点击动作（v' + MANIFEST.version + '）',
+  '# 提交记录与剩下的动作（v' + MANIFEST.version + '）',
   '',
-  '## 1. 上游 feature request（folia-major）',
+  '## 1. 模组更新（folium-compound）· 已提交',
   '',
-  featureUrl,
+  '- issue：<https://github.com/chthollyphile/folium-compound/issues/208>',
+  '- 内容：模组 id `song-comments`、版本 `v1.1.1`、渠道 / 分类「保持不变」、确认项已勾选',
+  '- 说明正文写在 `test/build_issue_urls.mjs` 的 `changes` 里，改完重跑本脚本即可拿到新的预填链接',
   '',
-  '## 2. 模组更新（folium-compound）',
+  '需要重开时用这个预填链接（长 URL，字段已填好，只差勾确认项）：',
   '',
   updateUrl,
+  '',
+  '## 2. 上游 feature request（folia-major）',
+  '',
+  featureUrl,
   '',
 ].join('\n');
 

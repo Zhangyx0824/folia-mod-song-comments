@@ -4,12 +4,13 @@
 
 | 项 | 状态 |
 |---|---|
-| 已收录版本 | **1.0.2**（已上架）；1.0.3 / 1.1.0 已推 tag，更新 issue 是否提交见 `ISSUE-LINKS.md` |
-| 本次版本 | **1.1.1**：修「面板高度卡在上一首那一档」 |
+| 已收录版本 | **1.0.2**（已上架） |
+| 本次版本 | **1.1.1**：修「面板高度卡在上一首那一档」；商店预览图换成真机截图 |
+| 已提交 | 更新 issue **#208**（2026-11-26，`ref=v1.1.1`，渠道 / 分类「保持不变」，确认项已勾） |
 | 代码 | `song-comments/client.mjs` · **102 项断言全绿** + 2 个 Chromium 布局探针（6 + 10 项） |
 | 真机验证 | Folia **0.8.0**（模组 API 1.10），已同步 + 重新授权，digest 一致 |
 | 仓库 | <https://github.com/Zhangyx0824/folia-mod-song-comments> |
-| 剩下的事 | 推 tag → 打开「模组更新」表单（链接在 `ISSUE-LINKS.md`） |
+| 剩下的事 | 等 CI 格式检查通过 → 维护者审查 → 维护者在 issue 里 `/sign` |
 
 ---
 
@@ -122,12 +123,16 @@ resolve "非正式主题曲" source=qq dtoId=121597355 neteaseId=- via=none
 
 ---
 
-## 三、剩下的两步
+## 三、提交与剩下的步骤
 
-### 1. 模组更新（folium-compound）
+### 1. 模组更新（folium-compound）· 已提交 #208
 
-链接在 `ISSUE-LINKS.md` 第 2 节（`mod-update.yml`，`ref` 改成 `v1.1.1` 后重跑 `test/build_issue_urls.mjs`）。
-**不要重开提交 issue**；CI 会从登记的仓库取 tag、检查版本号必须比当前高。
+<https://github.com/chthollyphile/folium-compound/issues/208>
+
+表单字段：模组 id `song-comments`、版本 `v1.1.1`、渠道「保持不变」、分类「保持不变」、确认项已勾。
+标签 `mod-update` 由模板自动带上，CI（`submission-check.yml`）会从登记的仓库取 tag、拉取那一个 commit，
+核对版本号必须比当前签名版本（1.0.2）高，并给出与 1.0.2 的对比链接。
+**不要重开提交 issue**；后续版本继续开新的更新 issue 即可。
 
 ### 2. 上游功能建议（folia-major，可选）
 
@@ -195,3 +200,19 @@ $NODE test/build_issue_urls.mjs
 **修法**：只单向给上限，不再读任何由自身高度决定的尺寸。`max-height: calc(var(--pn-tab-room) - 12px)`，其中 `--pn-tab-room` 是宿主下发的「页签可用高度」（宿主自己的队列页签也用这个值算高度，自定义属性会继承进 shadow root）。内容矮 → 自然矮；内容高 → 撑到上限后列表内部滚动。宿主没有这个变量时不设上限，交给宿主滚动容器，绝不锁死。
 
 **没有新增权限、没有改数据请求**：只改了布局。验证方式：`test/probe_grow.mjs` 按真实面板外壳（底边锚定 + `max-height` + 内容高度回写 + shadow root）复现了原 bug，覆盖「矮内容 → 切歌 → 高度要长回来 / 切回去要缩回来 / 无宿主变量 / 变量是嵌套 calc」。
+
+---
+
+## 六、商店预览图（1.1.1 换的这张）
+
+`mod.json` 的 `preview` 指向 `song-comments/preview.jpg`，模组市场把卡片顶部裁成 16:9
+（`.preview img{object-fit:cover}`），收录检查要求 PNG / JPG / WebP、≥640×360、≤1 MB、宽高比 1.5–2.0。
+
+这次换成 Folia 0.8.0 真机截图（播放页 + 右侧「评论」页签），原始 1920×960 是 2:1，直接提交会被
+`object-fit:cover` 左右各切掉约 5.5%——右侧评论面板正好在那一刀里。所以按 16:9 处理：
+
+1. 去掉截图最外 2px（窗口圆角和一道浅色描边）；
+2. 上下各补 61px 背景色（取内侧边缘行平均 RGB `19,18,14`），**不裁左右**，面板完整；
+3. 缩到 1280×720，JPEG q92，约 137 KB。
+
+`test/build_preview.mjs` 的渲染稿路径保留作备用（改了面板结构又来不及真机截图时用）。
